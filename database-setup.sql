@@ -1,9 +1,6 @@
 -- MatchHub Database Schema
 -- Run these commands in your Supabase SQL Editor
 
--- Enable Row Level Security (RLS)
-ALTER TABLE auth.users ENABLE ROW LEVEL SECURITY;
-
 -- Create matches table
 CREATE TABLE IF NOT EXISTS matches (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
