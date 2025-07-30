@@ -26,66 +26,111 @@ export default function DashboardPage() {
 
     try {
       setLoading(true)
+      console.log('Fetching user matches for:', user.id)
       
-      // Fetch matches created by user
-      const { data: created, error: createdError } = await supabase
+      // Fetch matches created by user (simple query)
+      const { data: createdData, error: createdError } = await supabase
         .from('matches')
-        .select(`
-          *,
-          organizer:organizer_id (
-            id,
-            email,
-            raw_user_meta_data
-          )
-        `)
+        .select('*')
         .eq('organizer_id', user.id)
         .order('date', { ascending: true })
 
-      if (createdError) throw createdError
+      if (createdError) {
+        console.error('Created matches error:', createdError)
+        throw createdError
+      }
 
-      // Fetch matches joined by user
-      const { data: joinedData, error: joinedError } = await supabase
+      console.log('Created matches:', createdData)
+
+      // Fetch match participants for this user
+      const { data: participantData, error: participantError } = await supabase
         .from('match_participants')
-        .select(`
-          match_id,
-          matches (
-            *,
-            organizer:organizer_id (
-              id,
-              email,
-              raw_user_meta_data
-            )
-          )
-        `)
+        .select('match_id')
         .eq('user_id', user.id)
 
-      if (joinedError) throw joinedError
+      if (participantError) {
+        console.error('Participant data error:', participantError)
+        throw participantError
+      }
+
+      console.log('Participant data:', participantData)
+
+      let joinedMatchesData: any[] = []
+      
+      // If user has joined matches, fetch those match details
+      if (participantData && participantData.length > 0) {
+        const matchIds = participantData.map(p => p.match_id)
+        
+        const { data: joinedData, error: joinedError } = await supabase
+          .from('matches')
+          .select('*')
+          .in('id', matchIds)
+          .order('date', { ascending: true })
+
+        if (joinedError) {
+          console.error('Joined matches error:', joinedError)
+          throw joinedError
+        }
+
+        joinedMatchesData = joinedData || []
+      }
+
+      console.log('Joined matches:', joinedMatchesData)
+
+      // Get all unique organizer IDs
+      const allMatches = [...(createdData || []), ...joinedMatchesData]
+      const organizerIds = [...new Set(allMatches.map(match => match.organizer_id))]
+      
+      // Get organizer info from user_profiles
+      const { data: organizersData } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', organizerIds)
+
+      console.log('Organizers data:', organizersData)
+
+      // Create a map of organizer info
+      const organizersMap = new Map(
+        organizersData?.map(org => [org.id, org]) || []
+      )
 
       // Transform created matches
-      const transformedCreated = created.map(match => ({
-        ...match,
-        organizer: {
-          id: match.organizer.id,
-          email: match.organizer.email,
-          full_name: match.organizer.raw_user_meta_data?.full_name
-        }
-      })) as Match[]
-
-      // Transform joined matches
-      const transformedJoined = joinedData
-        .filter(item => item.matches) // Filter out null matches
-        .map(item => ({
-          ...item.matches,
+      const transformedCreated = (createdData || []).map(match => {
+        const organizerProfile = organizersMap.get(match.organizer_id)
+        
+        return {
+          ...match,
           organizer: {
-            id: item.matches.organizer.id,
-            email: item.matches.organizer.email,
-            full_name: item.matches.organizer.raw_user_meta_data?.full_name
+            id: match.organizer_id,
+            email: 'Unknown',
+            full_name: organizerProfile?.full_name || 'Anonymous Organizer'
           }
-        })) as Match[]
+        }
+      }) as Match[]
+
+      // Transform joined matches (exclude matches that the user organized)
+      const transformedJoined = joinedMatchesData
+        .filter(match => match.organizer_id !== user.id) // Don't show created matches in joined list
+        .map(match => {
+          const organizerProfile = organizersMap.get(match.organizer_id)
+          
+          return {
+            ...match,
+            organizer: {
+              id: match.organizer_id,
+              email: 'Unknown', 
+              full_name: organizerProfile?.full_name || 'Anonymous Organizer'
+            }
+          }
+        }) as Match[]
+
+      console.log('Final created matches:', transformedCreated)
+      console.log('Final joined matches:', transformedJoined)
 
       setCreatedMatches(transformedCreated)
       setJoinedMatches(transformedJoined)
     } catch (err) {
+      console.error('Error fetching user matches:', err)
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)

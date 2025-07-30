@@ -93,9 +93,22 @@ CREATE POLICY "Users can manage their profile" ON user_profiles
 -- Function to automatically create user profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
+DECLARE
+  user_full_name TEXT;
 BEGIN
+  -- Try to extract full_name from different possible metadata keys
+  user_full_name := COALESCE(
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'fullName',
+    new.raw_user_meta_data->>'name',
+    'Anonymous Player'
+  );
+
   INSERT INTO public.user_profiles (id, full_name)
-  VALUES (new.id, new.raw_user_meta_data->>'full_name');
+  VALUES (new.id, user_full_name)
+  ON CONFLICT (id) DO UPDATE SET
+    full_name = COALESCE(EXCLUDED.full_name, user_profiles.full_name);
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -146,3 +159,39 @@ CREATE TRIGGER update_matches_updated_at BEFORE UPDATE ON matches
 
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON user_profiles
   FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column(); 
+
+-- Function to fix existing users without proper profiles (run this once after updating)
+CREATE OR REPLACE FUNCTION public.fix_existing_user_profiles()
+RETURNS void AS $$
+DECLARE
+  user_record RECORD;
+  user_full_name TEXT;
+BEGIN
+  -- Loop through all auth users
+  FOR user_record IN 
+    SELECT id, raw_user_meta_data 
+    FROM auth.users
+  LOOP
+    -- Extract full name from metadata
+    user_full_name := COALESCE(
+      user_record.raw_user_meta_data->>'full_name',
+      user_record.raw_user_meta_data->>'fullName',
+      user_record.raw_user_meta_data->>'name',
+      'Anonymous Player'
+    );
+
+    -- Insert or update profile
+    INSERT INTO public.user_profiles (id, full_name)
+    VALUES (user_record.id, user_full_name)
+    ON CONFLICT (id) DO UPDATE SET
+      full_name = CASE 
+        WHEN user_profiles.full_name IS NULL OR user_profiles.full_name = 'Anonymous Player' 
+        THEN EXCLUDED.full_name 
+        ELSE user_profiles.full_name 
+      END;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Call this function once to fix existing users (uncomment and run if needed)
+-- SELECT public.fix_existing_user_profiles(); 

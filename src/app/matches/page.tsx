@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase, Match } from '@/lib/supabase'
 import MatchCard from '@/components/MatchCard'
 import { Search, Filter, MapPin, Calendar, Users, Loader2 } from 'lucide-react'
@@ -22,46 +22,7 @@ export default function MatchesPage() {
     fetchMatches()
   }, [])
 
-  useEffect(() => {
-    applyFilters()
-  }, [matches, searchTerm, dateFilter, pitchTypeFilter])
-
-  const fetchMatches = async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('matches')
-        .select(`
-          *,
-          organizer:organizer_id (
-            id,
-            email,
-            raw_user_meta_data
-          )
-        `)
-        .order('date', { ascending: true })
-
-      if (error) throw error
-
-      // Transform the data to match our Match interface
-      const transformedMatches = data.map(match => ({
-        ...match,
-        organizer: {
-          id: match.organizer.id,
-          email: match.organizer.email,
-          full_name: match.organizer.raw_user_meta_data?.full_name
-        }
-      })) as Match[]
-
-      setMatches(transformedMatches)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = [...matches]
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -104,6 +65,62 @@ export default function MatchesPage() {
     }
 
     setFilteredMatches(filtered)
+  }, [matches, searchTerm, dateFilter, pitchTypeFilter])
+
+  useEffect(() => {
+    applyFilters()
+  }, [applyFilters])
+
+  const fetchMatches = async () => {
+    try {
+      setLoading(true)
+      
+      // First, get all matches without the join
+      const { data: matchesData, error: matchesError } = await supabase
+        .from('matches')
+        .select('*')
+        .order('date', { ascending: true })
+
+      if (matchesError) {
+        console.error('Matches query error:', matchesError)
+        throw matchesError
+      }
+
+      // Get unique organizer IDs
+      const organizerIds = [...new Set(matchesData.map(match => match.organizer_id))]
+      
+      // Get organizer info from user_profiles
+      const { data: organizersData } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', organizerIds)
+
+      // Create a map of organizer info
+      const organizersMap = new Map(
+        organizersData?.map(org => [org.id, org]) || []
+      )
+
+      // Transform the data to match our Match interface
+      const transformedMatches = matchesData.map(match => {
+        const organizerProfile = organizersMap.get(match.organizer_id)
+        
+        return {
+          ...match,
+          organizer: {
+            id: match.organizer_id,
+            email: 'Unknown',
+            full_name: organizerProfile?.full_name || 'Anonymous Organizer'
+          }
+        }
+      }) as Match[]
+
+      setMatches(transformedMatches)
+    } catch (err) {
+      console.error('Error fetching matches:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load matches')
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) {

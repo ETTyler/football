@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { Match } from '@/lib/supabase'
-import { Calendar, Clock, MapPin, Users, DollarSign } from 'lucide-react'
+import { formatTime } from '@/lib/utils'
+import { Calendar, Clock, MapPin, Users, PoundSterling } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface MatchCardProps {
@@ -28,7 +29,7 @@ export default function MatchCard({ match }: MatchCardProps) {
               </div>
               <div className="flex items-center gap-1">
                 <Clock className="h-4 w-4" />
-                <span>{match.time}</span>
+                <span>{formatTime(match.time)}</span>
               </div>
             </div>
           </div>
@@ -67,7 +68,7 @@ export default function MatchCard({ match }: MatchCardProps) {
             
             {match.pricing > 0 && (
               <div className="flex items-center gap-1">
-                <DollarSign className="h-4 w-4 text-gray-400" />
+                <PoundSterling className="h-4 w-4 text-gray-400" />
                 <span className="text-sm text-gray-600">£{match.pricing}</span>
               </div>
             )}

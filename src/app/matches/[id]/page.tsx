@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase, Match, MatchParticipant } from '@/lib/supabase'
+import { formatTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import { 
@@ -10,7 +11,7 @@ import {
   Clock, 
   MapPin, 
   Users, 
-  DollarSign, 
+  PoundSterling, 
   User, 
   UserPlus, 
   UserMinus, 
@@ -353,7 +354,7 @@ export default function MatchDetailsPage() {
                 <div className="flex items-center gap-3">
                   <Clock className="h-5 w-5 text-gray-400" />
                   <div>
-                    <p className="font-medium">{match.time}</p>
+                    <p className="font-medium">{formatTime(match.time)}</p>
                     <p className="text-sm text-gray-600">Local time</p>
                   </div>
                 </div>
@@ -378,7 +379,7 @@ export default function MatchDetailsPage() {
 
                 {match.pricing > 0 && (
                   <div className="flex items-center gap-3">
-                    <DollarSign className="h-5 w-5 text-gray-400" />
+                    <PoundSterling className="h-5 w-5 text-gray-400" />
                     <div>
                       <p className="font-medium">£{match.pricing} per player</p>
                       <p className="text-sm text-gray-600">Entry fee</p>

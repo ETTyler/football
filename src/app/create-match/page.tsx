@@ -8,14 +8,14 @@ import { z } from 'zod'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import MapPicker from '@/components/MapPicker'
-import { Calendar, Clock, MapPin, Users, DollarSign, FileText, AlertCircle, Loader2 } from 'lucide-react'
+import { Calendar, Clock, MapPin, Users, PoundSterling, FileText, AlertCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 const createMatchSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters'),
   date: z.string().min(1, 'Date is required'),
   time: z.string().min(1, 'Time is required'),
-  pitch_type: z.enum(['5-a-side', '7-a-side', '11-a-side']),
+  pitch_type: z.enum(['5-a-side', '6-a-side', '7-a-side', '11-a-side']),
   location: z.string().min(1, 'Please select a location on the map'),
   pricing: z.number().min(0, 'Price must be 0 or greater'),
   max_players: z.number().min(2, 'Must allow at least 2 players').max(22, 'Maximum 22 players allowed'),
@@ -91,7 +91,7 @@ export default function CreateMatchPage() {
             longitude: locationData.lng,
             pricing: data.pricing,
             max_players: data.max_players,
-            current_players: 1, // Creator is automatically joined
+            current_players: 0, // Will be automatically set to 1 by trigger when creator joins
             notes: data.notes,
             organizer_id: user.id,
           },
@@ -204,6 +204,7 @@ export default function CreateMatchPage() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             >
               <option value="5-a-side">5-a-side</option>
+              <option value="6-a-side">6-a-side</option>
               <option value="7-a-side">7-a-side</option>
               <option value="11-a-side">11-a-side</option>
             </select>
@@ -238,7 +239,7 @@ export default function CreateMatchPage() {
                 Price per Player (£)
               </label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <PoundSterling className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   {...register('pricing', { valueAsNumber: true })}
                   type="number"
