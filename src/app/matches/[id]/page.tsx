@@ -55,33 +55,74 @@ export default function MatchDetailsPage() {
 
   const fetchMatchDetails = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true)
+      console.log('Fetching match with ID:', matchId)
+      
+      // First, try to get the match data without the join
+      const { data: matchData, error: matchError } = await supabase
         .from('matches')
-        .select(`
-          *,
-          organizer:organizer_id (
-            id,
-            email,
-            raw_user_meta_data
-          )
-        `)
+        .select('*')
         .eq('id', matchId)
         .single()
 
-      if (error) throw error
+      if (matchError) {
+        console.error('Match query error:', matchError)
+        throw new Error(`Match not found: ${matchError.message}`)
+      }
+
+      if (!matchData) {
+        throw new Error('No match data returned')
+      }
+
+      console.log('Match data found:', matchData)
+
+      // Then get the organizer data separately
+      const { data: organizerData, error: organizerError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .eq('id', matchData.organizer_id)
+        .single()
+
+      // If user_profiles doesn't have the data, try to get it from auth.users metadata
+      let organizerInfo = {
+        id: matchData.organizer_id,
+        email: 'Unknown',
+        full_name: 'Anonymous Organizer'
+      }
+
+      if (organizerData) {
+        organizerInfo = {
+          id: organizerData.id,
+          email: 'Unknown',
+          full_name: organizerData.full_name || 'Anonymous Organizer'
+        }
+      } else {
+        // Try to get email from auth.users (this might not work due to RLS)
+        const { data: userData } = await supabase
+          .from('auth.users')
+          .select('email, raw_user_meta_data')
+          .eq('id', matchData.organizer_id)
+          .single()
+
+        if (userData) {
+          organizerInfo = {
+            id: matchData.organizer_id,
+            email: userData.email || 'Unknown',
+            full_name: userData.raw_user_meta_data?.full_name || 'Anonymous Organizer'
+          }
+        }
+      }
 
       const transformedMatch = {
-        ...data,
-        organizer: {
-          id: data.organizer.id,
-          email: data.organizer.email,
-          full_name: data.organizer.raw_user_meta_data?.full_name
-        }
+        ...matchData,
+        organizer: organizerInfo
       } as Match
 
+      console.log('Transformed match:', transformedMatch)
       setMatch(transformedMatch)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Match not found')
+      console.error('Error fetching match details:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load match details')
     } finally {
       setLoading(false)
     }
@@ -89,34 +130,54 @@ export default function MatchDetailsPage() {
 
   const fetchParticipants = async () => {
     try {
+      console.log('Fetching participants for match:', matchId)
+      
       const { data, error } = await supabase
         .from('match_participants')
         .select(`
-          *,
-          user:user_id (
-            id,
-            email,
-            raw_user_meta_data
-          )
+          id,
+          created_at,
+          match_id,
+          user_id
         `)
         .eq('match_id', matchId)
 
-      if (error) throw error
+      if (error) {
+        console.error('Participants query error:', error)
+        return
+      }
 
-      const transformedParticipants = data.map(participant => ({
-        ...participant,
-        user: {
-          id: participant.user.id,
-          email: participant.user.email,
-          full_name: participant.user.raw_user_meta_data?.full_name
-        }
-      })) as MatchParticipant[]
+      console.log('Participants data:', data)
 
-      setParticipants(transformedParticipants)
+      // Get user info for each participant
+      const participantsWithUserInfo = await Promise.all(
+        data.map(async (participant) => {
+          // Try to get user info from user_profiles first
+          const { data: profileData } = await supabase
+            .from('user_profiles')
+            .select('id, full_name')
+            .eq('id', participant.user_id)
+            .single()
+
+          const userInfo = {
+            id: participant.user_id,
+            email: 'Unknown',
+            full_name: profileData?.full_name || 'Anonymous Player'
+          }
+
+          return {
+            ...participant,
+            user: userInfo,
+            joined_at: participant.created_at
+          } as MatchParticipant
+        })
+      )
+
+      setParticipants(participantsWithUserInfo)
 
       // Check if current user is participating
       if (user) {
-        const userParticipant = transformedParticipants.find(p => p.user_id === user.id)
+        const userParticipant = participantsWithUserInfo.find(p => p.user_id === user.id)
         setUserParticipation(userParticipant || null)
       }
     } catch (err) {
@@ -207,14 +268,26 @@ export default function MatchDetailsPage() {
     return (
       <div className="max-w-2xl mx-auto mt-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h2 className="text-lg font-semibold text-red-800 mb-2">Error</h2>
-          <p className="text-red-600 mb-4">{error || 'Match not found'}</p>
-          <Link
-            href="/matches"
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-          >
-            Back to Matches
-          </Link>
+          <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-red-800 mb-2">Unable to Load Match</h2>
+          <p className="text-red-600 mb-4">{error || 'This match could not be found or may have been deleted.'}</p>
+          <div className="space-y-2">
+            <p className="text-sm text-red-500">Match ID: {matchId}</p>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Retry
+              </button>
+              <Link
+                href="/matches"
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Back to Matches
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -249,13 +322,6 @@ export default function MatchDetailsPage() {
           
           {isOrganizer && (
             <div className="flex items-center gap-2">
-              <Link
-                href={`/matches/${matchId}/edit`}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Edit className="h-4 w-4" />
-                Edit
-              </Link>
               <button
                 onClick={handleDeleteMatch}
                 disabled={actionLoading}
