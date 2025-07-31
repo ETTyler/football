@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { MapPin, Plus, List, User, LogOut, Target } from 'lucide-react'
+import NotificationCenter from './NotificationCenter'
 
 export default function Navigation() {
   const { user, signOut, loading } = useAuth()
@@ -40,6 +41,9 @@ export default function Navigation() {
               <div className="h-8 w-8 bg-gray-200 rounded-full animate-pulse"></div>
             ) : user ? (
               <div className="flex items-center space-x-4">
+                {/* Notification Center */}
+                <NotificationCenter />
+                
                 <Link
                   href="/dashboard"
                   className="flex items-center space-x-1 text-gray-700 hover:text-green-600 transition-colors"

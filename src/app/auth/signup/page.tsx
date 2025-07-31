@@ -24,6 +24,8 @@ type SignUpForm = z.infer<typeof signUpSchema>
 export default function SignUpPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>('')
   const { signUp } = useAuth()
   const router = useRouter()
 
@@ -39,13 +41,59 @@ export default function SignUpPage() {
     try {
       setIsLoading(true)
       setError(null)
-      await signUp(data.email, data.password, data.fullName)
-      router.push('/dashboard')
+      const result = await signUp(data.email, data.password, data.fullName)
+      
+      if (result.needsEmailConfirmation) {
+        setUserEmail(data.email)
+        setShowEmailConfirmation(true)
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Show email confirmation message
+  if (showEmailConfirmation) {
+    return (
+      <div className="max-w-md mx-auto mt-8">
+        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
+          <div className="mb-6">
+            <Mail className="h-16 w-16 text-green-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Check Your Email</h1>
+            <p className="text-gray-600">
+              We&apos;ve sent a confirmation link to <strong>{userEmail}</strong>
+            </p>
+          </div>
+          
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-blue-800">
+              Please check your email and click the confirmation link to complete your registration.
+              Don&apos;t forget to check your spam folder if you don&apos;t see the email.
+            </p>
+          </div>
+          
+          <div className="space-y-3">
+            <Link
+              href="/auth/signin"
+              className="block w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors text-center"
+            >
+              Go to Sign In
+            </Link>
+            
+            <button
+              onClick={() => setShowEmailConfirmation(false)}
+              className="block w-full text-gray-600 hover:text-gray-800 py-2 text-sm"
+            >
+              Try a different email address
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

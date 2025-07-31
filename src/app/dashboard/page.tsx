@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase, Match } from '@/lib/supabase'
 import MatchCard from '@/components/MatchCard'
-import { User, Calendar, Trophy, Plus, Loader2 } from 'lucide-react'
+import { User, Calendar, Trophy, Plus, Loader2, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 export default function DashboardPage() {
@@ -25,24 +25,22 @@ export default function DashboardPage() {
     if (!user) return
 
     try {
+      console.log('Fetching matches for user:', user.id)
       setLoading(true)
-      console.log('Fetching user matches for:', user.id)
-      
-      // Fetch matches created by user (simple query)
-      const { data: createdData, error: createdError } = await supabase
+
+      // Get matches organized by the user
+      const { data: createdMatchesData, error: createdError } = await supabase
         .from('matches')
         .select('*')
         .eq('organizer_id', user.id)
         .order('date', { ascending: true })
 
       if (createdError) {
-        console.error('Created matches error:', createdError)
+        console.error('Created matches query error:', createdError)
         throw createdError
       }
 
-      console.log('Created matches:', createdData)
-
-      // Fetch match participants for this user
+      // Get matches the user has joined (participant in)
       const { data: participantData, error: participantError } = await supabase
         .from('match_participants')
         .select('match_id')
@@ -52,8 +50,6 @@ export default function DashboardPage() {
         console.error('Participant data error:', participantError)
         throw participantError
       }
-
-      console.log('Participant data:', participantData)
 
       let joinedMatchesData: any[] = []
       
@@ -75,10 +71,27 @@ export default function DashboardPage() {
         joinedMatchesData = joinedData || []
       }
 
-      console.log('Joined matches:', joinedMatchesData)
+      console.log('Created matches raw:', createdMatchesData)
+      console.log('Joined matches raw:', joinedMatchesData)
 
-      // Get all unique organizer IDs
-      const allMatches = [...(createdData || []), ...joinedMatchesData]
+      // Get all unique match IDs for participant count calculation
+      const allMatches = [...(createdMatchesData || []), ...joinedMatchesData]
+      const matchIds = allMatches.map(match => match.id)
+
+      // Get accurate participant counts for all matches
+      const { data: participantsData } = await supabase
+        .from('match_participants')
+        .select('match_id')
+        .in('match_id', matchIds)
+
+      // Create a map of match_id to participant count
+      const participantCounts = new Map()
+      participantsData?.forEach(participant => {
+        const matchId = participant.match_id
+        participantCounts.set(matchId, (participantCounts.get(matchId) || 0) + 1)
+      })
+
+      // Get unique organizer IDs for user profile lookup
       const organizerIds = [...new Set(allMatches.map(match => match.organizer_id))]
       
       // Get organizer info from user_profiles
@@ -87,19 +100,20 @@ export default function DashboardPage() {
         .select('id, full_name')
         .in('id', organizerIds)
 
-      console.log('Organizers data:', organizersData)
-
       // Create a map of organizer info
       const organizersMap = new Map(
         organizersData?.map(org => [org.id, org]) || []
       )
 
       // Transform created matches
-      const transformedCreated = (createdData || []).map(match => {
+      const transformedCreated = (createdMatchesData || []).map(match => {
         const organizerProfile = organizersMap.get(match.organizer_id)
+        const actualParticipantCount = participantCounts.get(match.id) || 0
         
         return {
           ...match,
+          // Use actual participant count instead of relying on database trigger
+          current_players: actualParticipantCount,
           organizer: {
             id: match.organizer_id,
             email: 'Unknown',
@@ -113,9 +127,12 @@ export default function DashboardPage() {
         .filter(match => match.organizer_id !== user.id) // Don't show created matches in joined list
         .map(match => {
           const organizerProfile = organizersMap.get(match.organizer_id)
+          const actualParticipantCount = participantCounts.get(match.id) || 0
           
           return {
             ...match,
+            // Use actual participant count instead of relying on database trigger
+            current_players: actualParticipantCount,
             organizer: {
               id: match.organizer_id,
               email: 'Unknown', 
@@ -198,7 +215,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="bg-white rounded-lg shadow-sm p-6">
             <div className="flex items-center gap-3">
               <Calendar className="h-8 w-8 text-blue-600" />
@@ -238,6 +255,19 @@ export default function DashboardPage() {
               <div>
                 <p className="text-lg font-semibold">Create Match</p>
                 <p className="text-sm">Organize a new game</p>
+              </div>
+            </Link>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <Link
+              href="/settings/availability"
+              className="flex items-center gap-3 text-orange-600 hover:text-orange-700 transition-colors"
+            >
+              <Clock className="h-8 w-8" />
+              <div>
+                <p className="text-lg font-semibold">Availability</p>
+                <p className="text-sm">Set your free days</p>
               </div>
             </Link>
           </div>
@@ -297,7 +327,12 @@ export default function DashboardPage() {
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {joinedMatches.map((match) => (
-                  <MatchCard key={match.id} match={match} />
+                  <MatchCard 
+                    key={match.id} 
+                    match={match} 
+                    userParticipationStatus={match.organizer_id === user.id ? 'organizer' : 'joined'}
+                    currentUserId={user.id}
+                  />
                 ))}
               </div>
             )}
@@ -321,7 +356,12 @@ export default function DashboardPage() {
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {createdMatches.map((match) => (
-                  <MatchCard key={match.id} match={match} />
+                  <MatchCard 
+                    key={match.id} 
+                    match={match} 
+                    userParticipationStatus="organizer"
+                    currentUserId={user.id}
+                  />
                 ))}
               </div>
             )}

@@ -6,18 +6,14 @@ import { LatLngExpression } from 'leaflet'
 import { Search, MapPin, Loader2 } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 
-// Fix for default markers in react-leaflet
-import L from 'leaflet'
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-})
-
 interface MapPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void
   initialPosition?: [number, number]
+  initialLocation?: {
+    lat: number
+    lng: number
+    address: string
+  }
 }
 
 interface SearchResult {
@@ -54,7 +50,11 @@ function LocationMarker({
   return markerPosition ? <Marker position={markerPosition} /> : null
 }
 
-export default function MapPicker({ onLocationSelect, initialPosition = [51.505, -0.09] }: MapPickerProps) {
+export default function MapPicker({ 
+  onLocationSelect, 
+  initialPosition = [51.505, -0.09],
+  initialLocation 
+}: MapPickerProps) {
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -65,7 +65,31 @@ export default function MapPicker({ onLocationSelect, initialPosition = [51.505,
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    
+    // Fix for default markers in react-leaflet - only run on client side
+    const fixLeafletIcons = async () => {
+      if (typeof window !== 'undefined') {
+        const L = await import('leaflet')
+        delete ((L.default as any).Icon.Default.prototype as any)._getIconUrl
+        L.default.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+        })
+      }
+    }
+    
+    fixLeafletIcons()
+    
+    // Set initial location if provided (for editing)
+    if (initialLocation) {
+      const position: LatLngExpression = [initialLocation.lat, initialLocation.lng]
+      setMarkerPosition(position)
+      setMapCenter([initialLocation.lat, initialLocation.lng])
+      // Optionally set the search query to show the current address
+      setSearchQuery(initialLocation.address)
+    }
+  }, [initialLocation])
 
   // Debounced search function
   useEffect(() => {
@@ -209,7 +233,7 @@ export default function MapPicker({ onLocationSelect, initialPosition = [51.505,
         <p className="font-medium text-blue-800 mb-1">How to select location:</p>
         <ul className="list-disc list-inside space-y-1 text-blue-700">
           <li>Type an address in the search box above</li>
-          <li>Click "Use Current Location" to use GPS</li>
+          <li>Click &quot;Use Current Location&quot; to use GPS</li>
           <li>Click anywhere on the map to pin a location</li>
         </ul>
       </div>

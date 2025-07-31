@@ -7,7 +7,7 @@ import { supabase, ensureUserProfile } from '@/lib/supabase'
 interface AuthContextType {
   user: User | null
   loading: boolean
-  signUp: (email: string, password: string, fullName?: string) => Promise<void>
+  signUp: (email: string, password: string, fullName?: string) => Promise<{ needsEmailConfirmation?: boolean }>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
 }
@@ -41,6 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
+        emailRedirectTo: typeof window !== 'undefined' 
+          ? `${window.location.origin}/auth/callback`
+          : '/auth/callback',
         data: {
           full_name: fullName,
         },
@@ -48,8 +51,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
     if (error) throw error
     
-    // Ensure profile is created immediately after signup
-    if (data.user && fullName) {
+    // Check if email confirmation is needed
+    const needsEmailConfirmation = Boolean(!data.session && data.user && !data.user.email_confirmed_at)
+    
+    // Ensure profile is created immediately after signup (only if session exists)
+    if (data.user && fullName && data.session) {
       try {
         await ensureUserProfile(data.user)
       } catch (profileError) {
@@ -57,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Don't throw error here, as auth was successful
       }
     }
+    
+    return { needsEmailConfirmation }
   }
 
   const signIn = async (email: string, password: string) => {

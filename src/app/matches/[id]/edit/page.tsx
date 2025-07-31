@@ -1,24 +1,17 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase, createInvitation, UserSearchResult } from '@/lib/supabase'
-import dynamic from 'next/dynamic'
-import UserSearch, { SelectedUsersList } from '@/components/UserSearch'
-import { Calendar, Clock, MapPin, Users, PoundSterling, FileText, AlertCircle, Loader2, Send } from 'lucide-react'
+import { supabase, Match } from '@/lib/supabase'
+import MapPicker from '@/components/MapPicker'
+import { Calendar, Clock, MapPin, Users, PoundSterling, FileText, AlertCircle, Loader2, ArrowLeft, Save } from 'lucide-react'
 import Link from 'next/link'
 
-// Dynamically import MapPicker to avoid SSR issues
-const MapPicker = dynamic(() => import('@/components/MapPicker'), {
-  ssr: false,
-  loading: () => <div className="h-64 bg-gray-100 rounded-lg flex items-center justify-center">Loading map...</div>
-})
-
-const createMatchSchema = z.object({
+const editMatchSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters'),
   date: z.string().min(1, 'Date is required'),
   time: z.string().min(1, 'Time is required'),
@@ -27,38 +20,152 @@ const createMatchSchema = z.object({
   pricing: z.number().min(0, 'Price must be 0 or greater'),
   max_players: z.number().min(2, 'Must allow at least 2 players').max(22, 'Maximum 22 players allowed'),
   notes: z.string().optional(),
-  invitation_message: z.string().optional(),
 })
 
-type CreateMatchForm = z.infer<typeof createMatchSchema>
+type EditMatchForm = z.infer<typeof editMatchSchema>
 
-export default function CreateMatchPage() {
+export default function EditMatchPage() {
+  const params = useParams()
+  const router = useRouter()
+  const { user } = useAuth()
+  const [match, setMatch] = useState<Match | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
   const [locationData, setLocationData] = useState<{ lat: number; lng: number; address: string } | null>(null)
-  const [selectedUsers, setSelectedUsers] = useState<UserSearchResult[]>([])
-  const [invitationStep, setInvitationStep] = useState<'create' | 'inviting'>('create')
-  const { user } = useAuth()
-  const router = useRouter()
+
+  const matchId = params.id as string
 
   const {
     register,
     handleSubmit,
     setValue,
-    watch,
     formState: { errors },
-  } = useForm<CreateMatchForm>({
-    resolver: zodResolver(createMatchSchema),
-    defaultValues: {
-      pitch_type: '11-a-side',
-      pricing: 0,
-      max_players: 22,
-      invitation_message: 'Hey! I created a new football match and would love for you to join. Hope to see you there!'
-    },
+    reset
+  } = useForm<EditMatchForm>({
+    resolver: zodResolver(editMatchSchema),
   })
 
-  // Watch the invitation message for the character count
-  const invitationMessage = watch('invitation_message')
+  useEffect(() => {
+    if (matchId) {
+      fetchMatchDetails()
+    }
+  }, [matchId, user])
+
+  const fetchMatchDetails = async () => {
+    try {
+      setPageLoading(true)
+      
+      const { data: matchData, error: matchError } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('id', matchId)
+        .single()
+
+      if (matchError) throw matchError
+      
+      // Check if user is the organizer
+      if (!user || matchData.organizer_id !== user.id) {
+        setError('You are not authorized to edit this match')
+        return
+      }
+
+      setMatch(matchData as Match)
+      setLocationData({ 
+        lat: matchData.latitude, 
+        lng: matchData.longitude, 
+        address: matchData.location 
+      })
+
+      // Pre-populate form with existing data
+      reset({
+        title: matchData.title,
+        date: matchData.date,
+        time: matchData.time,
+        pitch_type: matchData.pitch_type,
+        location: matchData.location,
+        pricing: matchData.pricing,
+        max_players: matchData.max_players,
+        notes: matchData.notes || ''
+      })
+
+    } catch (err) {
+      console.error('Error fetching match details:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load match details')
+    } finally {
+      setPageLoading(false)
+    }
+  }
+
+  const handleLocationSelect = (lat: number, lng: number, address: string) => {
+    setLocationData({ lat, lng, address })
+    setValue('location', address)
+  }
+
+  const onSubmit = async (data: EditMatchForm) => {
+    if (!locationData || !match) {
+      setError('Please select a location on the map')
+      return
+    }
+
+    // Check if current players would exceed new max players
+    if (data.max_players < match.current_players) {
+      setError(`Cannot reduce max players below current player count (${match.current_players})`)
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      console.log('Updating match with data:', {
+        title: data.title,
+        date: data.date,
+        time: data.time,
+        pitch_type: data.pitch_type,
+        location: data.location,
+        latitude: locationData.lat,
+        longitude: locationData.lng,
+        pricing: data.pricing,
+        max_players: data.max_players,
+        notes: data.notes,
+      })
+
+      const { error: updateError } = await supabase
+        .from('matches')
+        .update({
+          title: data.title,
+          date: data.date,
+          time: data.time,
+          pitch_type: data.pitch_type,
+          location: data.location,
+          latitude: locationData.lat,
+          longitude: locationData.lng,
+          pricing: data.pricing,
+          max_players: data.max_players,
+          notes: data.notes,
+        })
+        .eq('id', matchId)
+
+      if (updateError) {
+        console.error('Supabase update error:', updateError)
+        throw updateError
+      }
+
+      console.log('Match updated successfully')
+      // Redirect back to match details
+      router.push(`/matches/${matchId}`)
+    } catch (err) {
+      console.error('Error updating match:', err)
+      if (err instanceof Error) {
+        setError(`Update failed: ${err.message}`)
+      } else {
+        setError('An unknown error occurred while updating the match')
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Redirect if not authenticated
   if (!user) {
@@ -66,7 +173,7 @@ export default function CreateMatchPage() {
       <div className="max-w-2xl mx-auto mt-8">
         <div className="bg-white rounded-lg shadow-sm p-8 text-center">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h1>
-          <p className="text-gray-600 mb-6">You need to be signed in to create a match.</p>
+          <p className="text-gray-600 mb-6">You need to be signed in to edit matches.</p>
           <Link
             href="/auth/signin"
             className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
@@ -78,99 +185,50 @@ export default function CreateMatchPage() {
     )
   }
 
-  const handleLocationSelect = (lat: number, lng: number, address: string) => {
-    setLocationData({ lat, lng, address })
-    setValue('location', address)
-  }
-
-  const handleUserSelect = (user: UserSearchResult) => {
-    setSelectedUsers(prev => [...prev, user])
-  }
-
-  const handleRemoveUser = (userId: string) => {
-    setSelectedUsers(prev => prev.filter(u => u.id !== userId))
-  }
-
-  const sendInvitations = async (matchId: string, message?: string) => {
-    const invitePromises = selectedUsers.map(selectedUser =>
-      createInvitation(matchId, selectedUser.id, message)
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-6 w-6 animate-spin text-green-600" />
+          <span className="text-gray-600">Loading match details...</span>
+        </div>
+      </div>
     )
-
-    try {
-      await Promise.all(invitePromises)
-    } catch (error) {
-      console.error('Error sending some invitations:', error)
-      // Don't throw here - match creation was successful
-    }
   }
 
-  const onSubmit = async (data: CreateMatchForm) => {
-    if (!locationData) {
-      setError('Please select a location on the map')
-      return
-    }
-
-    try {
-      setIsLoading(true)
-      setError(null)
-
-      const { data: match, error: insertError } = await supabase
-        .from('matches')
-        .insert([
-          {
-            title: data.title,
-            date: data.date,
-            time: data.time,
-            pitch_type: data.pitch_type,
-            location: data.location,
-            latitude: locationData.lat,
-            longitude: locationData.lng,
-            pricing: data.pricing,
-            max_players: data.max_players,
-            current_players: 0, // Will be automatically set to 1 by trigger when creator joins
-            notes: data.notes,
-            organizer_id: user.id,
-          },
-        ])
-        .select()
-        .single()
-
-      if (insertError) throw insertError
-
-      // Add the creator as the first participant
-      const { error: participantError } = await supabase
-        .from('match_participants')
-        .insert([
-          {
-            match_id: match.id,
-            user_id: user.id,
-          },
-        ])
-
-      if (participantError) throw participantError
-
-      // Send invitations if any users were selected
-      if (selectedUsers.length > 0) {
-        setInvitationStep('inviting')
-        await sendInvitations(match.id, data.invitation_message)
-      }
-
-      router.push(`/matches/${match.id}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setIsLoading(false)
-    }
+  if (error && !match) {
+    return (
+      <div className="max-w-2xl mx-auto mt-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-red-800 mb-2">Cannot Edit Match</h2>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Link
+            href={`/matches/${matchId}`}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Back to Match
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm p-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Create New Match</h1>
-          <p className="text-gray-600 mt-2">Set up a football match and invite players to join</p>
-        </div>
+      <div className="mb-6">
+        <Link
+          href={`/matches/${matchId}`}
+          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Match Details
+        </Link>
+        <h1 className="text-2xl font-bold text-gray-900">Edit Match</h1>
+        <p className="text-gray-600 mt-2">Update your match details - participants will be notified of changes</p>
+      </div>
 
+      <div className="bg-white rounded-lg shadow-sm p-8">
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-red-500" />
@@ -261,7 +319,14 @@ export default function CreateMatchPage() {
               Location
             </label>
             <div className="space-y-3">
-              <MapPicker onLocationSelect={handleLocationSelect} />
+              <MapPicker 
+                onLocationSelect={handleLocationSelect}
+                initialLocation={locationData ? {
+                  lat: locationData.lat,
+                  lng: locationData.lng,
+                  address: locationData.address
+                } : undefined}
+              />
               {locationData && (
                 <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
                   <MapPin className="h-4 w-4" />
@@ -307,11 +372,16 @@ export default function CreateMatchPage() {
                   {...register('max_players', { valueAsNumber: true })}
                   type="number"
                   id="max_players"
-                  min="2"
+                  min={match?.current_players || 2}
                   max="22"
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 />
               </div>
+              {match && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Current players: {match.current_players} (minimum allowed)
+                </p>
+              )}
               {errors.max_players && (
                 <p className="mt-2 text-sm text-red-600">{errors.max_players.message}</p>
               )}
@@ -338,82 +408,33 @@ export default function CreateMatchPage() {
             )}
           </div>
 
-          {/* Invite Players Section */}
-          <div className="border-t border-gray-200 pt-6">
-            <div className="mb-4">
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Invite Players (Optional)
-              </h3>
-              <p className="text-gray-600 text-sm mb-4">
-                Search and select users to invite to your match. They&apos;ll receive a notification with your invitation.
-              </p>
-            </div>
-
-            <UserSearch
-              onUserSelect={handleUserSelect}
-              selectedUsers={selectedUsers}
-              excludeUserIds={[user.id]} // Don't allow inviting yourself
-              matchDate={watch('date')} // Pass the selected date for availability filtering
-            />
-
-            <SelectedUsersList
-              users={selectedUsers}
-              onRemoveUser={handleRemoveUser}
-            />
-
-            {selectedUsers.length > 0 && (
-              <div className="mt-4">
-                <label htmlFor="invitation_message" className="block text-sm font-medium text-gray-700 mb-2">
-                  Invitation Message
-                </label>
-                <div className="relative">
-                  <Send className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                  <textarea
-                    {...register('invitation_message')}
-                    id="invitation_message"
-                    rows={3}
-                    maxLength={500}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                    placeholder="Add a personal message to your invitation..."
-                  />
-                </div>
-                <div className="flex justify-between items-center mt-2">
-                  <p className="text-xs text-gray-500">
-                    This message will be sent to all {selectedUsers.length} selected user{selectedUsers.length > 1 ? 's' : ''}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {invitationMessage?.length || 0}/500
-                  </p>
-                </div>
-                {errors.invitation_message && (
-                  <p className="mt-2 text-sm text-red-600">{errors.invitation_message.message}</p>
-                )}
-              </div>
-            )}
+          {/* Submit Buttons */}
+          <div className="flex gap-4">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Saving Changes...
+                </>
+              ) : (
+                <>
+                  <Save className="h-5 w-5" />
+                  Save Changes
+                </>
+              )}
+            </button>
+            
+            <Link
+              href={`/matches/${matchId}`}
+              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors text-center"
+            >
+              Cancel
+            </Link>
           </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin" />
-                {invitationStep === 'inviting' ? 'Sending Invitations...' : 'Creating Match...'}
-              </>
-            ) : (
-              <>
-                Create Match
-                {selectedUsers.length > 0 && (
-                  <span className="bg-green-500 text-xs px-2 py-1 rounded-full">
-                    +{selectedUsers.length} invite{selectedUsers.length > 1 ? 's' : ''}
-                  </span>
-                )}
-              </>
-            )}
-          </button>
         </form>
       </div>
     </div>

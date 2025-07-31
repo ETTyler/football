@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, Match } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import MatchCard from '@/components/MatchCard'
 import { Search, Filter, MapPin, Calendar, Users, Loader2 } from 'lucide-react'
 
@@ -9,8 +10,10 @@ type FilterType = 'all' | 'upcoming' | 'today' | 'this-week'
 type PitchTypeFilter = 'all' | '5-a-side' | '7-a-side' | '11-a-side'
 
 export default function MatchesPage() {
+  const { user } = useAuth()
   const [matches, setMatches] = useState<Match[]>([])
   const [filteredMatches, setFilteredMatches] = useState<Match[]>([])
+  const [userParticipations, setUserParticipations] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
@@ -100,12 +103,45 @@ export default function MatchesPage() {
         organizersData?.map(org => [org.id, org]) || []
       )
 
+      // Get accurate participant counts for all matches
+      const matchIds = matchesData.map(match => match.id)
+      const { data: participantsData } = await supabase
+        .from('match_participants')
+        .select('match_id')
+        .in('match_id', matchIds)
+
+      // Create a map of match_id to participant count
+      const participantCounts = new Map()
+      participantsData?.forEach(participant => {
+        const matchId = participant.match_id
+        participantCounts.set(matchId, (participantCounts.get(matchId) || 0) + 1)
+      })
+
+      // Get user's participation data if authenticated
+      let userParticipatedMatches = new Set<string>()
+      if (user) {
+        const { data: userParticipationsData } = await supabase
+          .from('match_participants')
+          .select('match_id')
+          .eq('user_id', user.id)
+          .in('match_id', matchIds)
+
+        if (userParticipationsData) {
+          userParticipatedMatches = new Set(userParticipationsData.map(p => p.match_id))
+        }
+      }
+
+      setUserParticipations(userParticipatedMatches)
+
       // Transform the data to match our Match interface
       const transformedMatches = matchesData.map(match => {
         const organizerProfile = organizersMap.get(match.organizer_id)
+        const actualParticipantCount = participantCounts.get(match.id) || 0
         
         return {
           ...match,
+          // Use actual participant count instead of relying on database trigger
+          current_players: actualParticipantCount,
           organizer: {
             id: match.organizer_id,
             email: 'Unknown',
@@ -121,6 +157,20 @@ export default function MatchesPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const getUserParticipationStatus = (match: Match) => {
+    if (!user) return 'not-joined'
+    
+    if (match.organizer_id === user.id) {
+      return 'organizer'
+    }
+    
+    if (userParticipations.has(match.id)) {
+      return 'joined'
+    }
+    
+    return 'not-joined'
   }
 
   if (loading) {
@@ -263,7 +313,12 @@ export default function MatchesPage() {
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredMatches.map((match) => (
-            <MatchCard key={match.id} match={match} />
+            <MatchCard 
+              key={match.id} 
+              match={match}
+              userParticipationStatus={getUserParticipationStatus(match)}
+              currentUserId={user?.id}
+            />
           ))}
         </div>
       )}

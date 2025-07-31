@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabase, Match, MatchParticipant } from '@/lib/supabase'
+import { supabase, Match, MatchParticipant, Invitation, createInvitation, UserSearchResult } from '@/lib/supabase'
 import { formatTime } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import UserSearch, { SelectedUsersList } from '@/components/UserSearch'
 import { 
   Calendar, 
   Clock, 
@@ -19,7 +20,12 @@ import {
   Trash2,
   AlertCircle,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  Send,
+  Mail,
+  CheckCircle,
+  XCircle,
+  Clock as ClockIcon
 } from 'lucide-react'
 import { format } from 'date-fns'
 import Link from 'next/link'
@@ -40,10 +46,17 @@ export default function MatchDetailsPage() {
   const { user } = useAuth()
   const [match, setMatch] = useState<Match | null>(null)
   const [participants, setParticipants] = useState<MatchParticipant[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [userParticipation, setUserParticipation] = useState<MatchParticipant | null>(null)
+  
+  // Invitation states
+  const [showInviteSection, setShowInviteSection] = useState(false)
+  const [selectedUsers, setSelectedUsers] = useState<UserSearchResult[]>([])
+  const [inviteMessage, setInviteMessage] = useState('Hey! I thought you might be interested in joining this football match. Hope to see you there!')
+  const [inviteLoading, setInviteLoading] = useState(false)
 
   const matchId = params.id as string
 
@@ -51,6 +64,7 @@ export default function MatchDetailsPage() {
     if (matchId) {
       fetchMatchDetails()
       fetchParticipants()
+      fetchInvitations()
     }
   }, [matchId, user])
 
@@ -114,12 +128,22 @@ export default function MatchDetailsPage() {
         }
       }
 
+      // Get actual participant count to ensure accuracy
+      const { data: participantCountData, error: countError } = await supabase
+        .from('match_participants')
+        .select('id', { count: 'exact' })
+        .eq('match_id', matchId)
+
+      const actualParticipantCount = participantCountData?.length || 0
+
       const transformedMatch = {
         ...matchData,
+        // Use actual participant count instead of relying on database trigger
+        current_players: actualParticipantCount,
         organizer: organizerInfo
       } as Match
 
-      console.log('Transformed match:', transformedMatch)
+      console.log('Transformed match with corrected participant count:', transformedMatch)
       setMatch(transformedMatch)
     } catch (err) {
       console.error('Error fetching match details:', err)
@@ -186,6 +210,30 @@ export default function MatchDetailsPage() {
     }
   }
 
+  const fetchInvitations = async () => {
+    if (!user || !match) return
+
+    try {
+      const { data, error } = await supabase
+        .from('invitations')
+        .select(`
+          *,
+          invitee:user_profiles!invitations_invitee_id_fkey(id, full_name)
+        `)
+        .eq('match_id', matchId)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching invitations:', error)
+        return
+      }
+
+      setInvitations(data || [])
+    } catch (err) {
+      console.error('Error fetching invitations:', err)
+    }
+  }
+
   const handleJoinMatch = async () => {
     if (!user || !match) return
 
@@ -202,9 +250,14 @@ export default function MatchDetailsPage() {
 
       if (error) throw error
 
-      // Refresh data
+      // Immediately update local state for better UX
+      setMatch(prev => prev ? { ...prev, current_players: prev.current_players + 1 } : null)
+
+      // Refresh data to ensure consistency
       await Promise.all([fetchMatchDetails(), fetchParticipants()])
     } catch (err) {
+      // Revert the optimistic update if there was an error
+      setMatch(prev => prev ? { ...prev, current_players: Math.max(0, prev.current_players - 1) } : null)
       setError(err instanceof Error ? err.message : 'Failed to join match')
     } finally {
       setActionLoading(false)
@@ -223,9 +276,14 @@ export default function MatchDetailsPage() {
 
       if (error) throw error
 
-      // Refresh data
+      // Immediately update local state for better UX
+      setMatch(prev => prev ? { ...prev, current_players: Math.max(0, prev.current_players - 1) } : null)
+
+      // Refresh data to ensure consistency
       await Promise.all([fetchMatchDetails(), fetchParticipants()])
     } catch (err) {
+      // Revert the optimistic update if there was an error
+      setMatch(prev => prev ? { ...prev, current_players: prev.current_players + 1 } : null)
       setError(err instanceof Error ? err.message : 'Failed to leave match')
     } finally {
       setActionLoading(false)
@@ -252,6 +310,82 @@ export default function MatchDetailsPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete match')
       setActionLoading(false)
     }
+  }
+
+  const handleUserSelect = (selectedUser: UserSearchResult) => {
+    console.log('Match page: handleUserSelect called with user:', selectedUser)
+    console.log('Match page: current selectedUsers:', selectedUsers)
+    
+    try {
+      setSelectedUsers(prev => {
+        const newUsers = [...prev, selectedUser]
+        console.log('Match page: updating selectedUsers to:', newUsers)
+        return newUsers
+      })
+      console.log('Match page: user selection completed successfully')
+    } catch (error) {
+      console.error('Match page: error in handleUserSelect:', error)
+    }
+  }
+
+  const handleRemoveUser = (userId: string) => {
+    setSelectedUsers(prev => prev.filter(u => u.id !== userId))
+  }
+
+  const handleSendInvitations = async () => {
+    if (!user || !match || selectedUsers.length === 0) return
+
+    setInviteLoading(true)
+    try {
+      const invitePromises = selectedUsers.map(selectedUser =>
+        createInvitation(match.id, selectedUser.id, inviteMessage)
+      )
+
+      await Promise.all(invitePromises)
+      
+      // Reset form
+      setSelectedUsers([])
+      setShowInviteSection(false)
+      
+      // Refresh invitations
+      await fetchInvitations()
+      
+      // Show success message
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send invitations')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const getInvitationStatusIcon = (status: string) => {
+    switch (status) {
+      case 'accepted':
+        return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'declined':
+        return <XCircle className="h-4 w-4 text-red-500" />
+      default:
+        return <ClockIcon className="h-4 w-4 text-yellow-500" />
+    }
+  }
+
+  const getInvitationStatusText = (status: string) => {
+    switch (status) {
+      case 'accepted':
+        return 'Accepted'
+      case 'declined':
+        return 'Declined'
+      default:
+        return 'Pending'
+    }
+  }
+
+  // Get users who are already participants or have pending invitations
+  const getExcludedUserIds = () => {
+    const participantIds = participants.map(p => p.user_id)
+    const invitedIds = invitations.map(i => i.invitee_id)
+    return [...participantIds, ...invitedIds]
   }
 
   if (loading) {
@@ -324,6 +458,20 @@ export default function MatchDetailsPage() {
           {isOrganizer && (
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setShowInviteSection(!showInviteSection)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Mail className="h-4 w-4" />
+                Invite Players
+              </button>
+              <Link
+                href={`/matches/${matchId}/edit`}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Edit className="h-4 w-4" />
+                Edit Match
+              </Link>
+              <button
                 onClick={handleDeleteMatch}
                 disabled={actionLoading}
                 className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
@@ -335,6 +483,85 @@ export default function MatchDetailsPage() {
           )}
         </div>
       </div>
+
+      {/* Invitation Section (for organizers) */}
+      {isOrganizer && showInviteSection && (
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Invite More Players</h3>
+          
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              <span className="text-red-700">{error}</span>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <UserSearch
+              onUserSelect={handleUserSelect}
+              selectedUsers={selectedUsers}
+              excludeUserIds={getExcludedUserIds()}
+              placeholder="Search for more players to invite..."
+              matchDate={match?.date} // Pass the match date for availability filtering
+            />
+
+            <SelectedUsersList
+              users={selectedUsers}
+              onRemoveUser={handleRemoveUser}
+            />
+
+            {selectedUsers.length > 0 && (
+              <div>
+                <label htmlFor="invite-message" className="block text-sm font-medium text-gray-700 mb-2">
+                  Invitation Message
+                </label>
+                <textarea
+                  id="invite-message"
+                  value={inviteMessage}
+                  onChange={(e) => setInviteMessage(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  placeholder="Add a personal message to your invitation..."
+                />
+                <div className="flex justify-between items-center mt-2">
+                  <p className="text-xs text-gray-500">
+                    This message will be sent to {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {inviteMessage.length}/500
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleSendInvitations}
+                disabled={selectedUsers.length === 0 || inviteLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {inviteLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Send Invitations
+              </button>
+              <button
+                onClick={() => {
+                  setShowInviteSection(false)
+                  setSelectedUsers([])
+                  setError(null)
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-8">
         {/* Main Content */}
@@ -538,6 +765,39 @@ export default function MatchDetailsPage() {
               </div>
             )}
           </div>
+
+          {/* Invitations (for organizers) */}
+          {isOrganizer && invitations.length > 0 && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h3 className="font-medium mb-4">
+                Invitations ({invitations.length})
+              </h3>
+              
+              <div className="space-y-3">
+                {invitations.map((invitation) => (
+                  <div key={invitation.id} className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      {getInvitationStatusIcon(invitation.status)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">
+                        {invitation.invitee?.full_name || 'Anonymous User'}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-500">
+                          {getInvitationStatusText(invitation.status)}
+                        </p>
+                        <span className="text-xs text-gray-300">•</span>
+                        <p className="text-xs text-gray-500">
+                          {format(new Date(invitation.created_at), 'MMM dd')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
