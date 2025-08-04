@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS matches (
   title TEXT NOT NULL,
   date DATE NOT NULL,
   time TIME NOT NULL,
-  pitch_type TEXT NOT NULL CHECK (pitch_type IN ('5-a-side', '7-a-side', '11-a-side')),
+  pitch_type TEXT NOT NULL CHECK (pitch_type IN ('5-a-side', '6-a-side', '7-a-side', '11-a-side')),
   location TEXT NOT NULL,
   latitude FLOAT8 NOT NULL,
   longitude FLOAT8 NOT NULL,

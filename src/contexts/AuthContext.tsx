@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
-import { supabase, ensureUserProfile } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 interface AuthContextType {
   user: User | null
@@ -54,15 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check if email confirmation is needed
     const needsEmailConfirmation = Boolean(!data.session && data.user && !data.user.email_confirmed_at)
     
-    // Ensure profile is created immediately after signup (only if session exists)
-    if (data.user && fullName && data.session) {
-      try {
-        await ensureUserProfile(data.user)
-      } catch (profileError) {
-        console.error('Error creating user profile:', profileError)
-        // Don't throw error here, as auth was successful
-      }
-    }
+    // Profile will be created by database triggers on first login if needed
     
     return { needsEmailConfirmation }
   }

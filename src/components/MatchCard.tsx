@@ -27,7 +27,7 @@ export default function MatchCard({
     if (!isUpcoming) {
       return {
         text: 'View Match Details',
-        color: 'text-gray-600',
+        color: 'text-gray-600 dark:text-gray-400',
         icon: null
       }
     }
@@ -35,7 +35,7 @@ export default function MatchCard({
     if (isOrganizer || userParticipationStatus === 'organizer') {
       return {
         text: 'Manage Match',
-        color: 'text-blue-600',
+        color: 'text-blue-600 dark:text-blue-400',
         icon: <Settings className="h-4 w-4" />
       }
     }
@@ -43,7 +43,7 @@ export default function MatchCard({
     if (userParticipationStatus === 'joined') {
       return {
         text: 'Already Joined',
-        color: 'text-green-600',
+        color: 'text-green-600 dark:text-green-400',
         icon: <CheckCircle className="h-4 w-4" />
       }
     }
@@ -51,14 +51,14 @@ export default function MatchCard({
     if (isFull) {
       return {
         text: 'Match Full',
-        color: 'text-red-600',
+        color: 'text-red-600 dark:text-red-400',
         icon: null
       }
     }
 
     return {
       text: 'Join Match →',
-      color: 'text-green-600',
+      color: 'text-green-600 dark:text-green-400',
       icon: null
     }
   }
@@ -67,12 +67,12 @@ export default function MatchCard({
 
   return (
     <Link href={`/matches/${match.id}`}>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 hover:shadow-md dark:hover:shadow-xl transition-shadow cursor-pointer">
         {/* Header */}
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-1">{match.title}</h3>
-            <div className="flex items-center gap-4 text-sm text-gray-600">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{match.title}</h3>
+            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
               <div className="flex items-center gap-1">
                 <Calendar className="h-4 w-4" />
                 <span>{format(matchDate, 'MMM dd, yyyy')}</span>
@@ -88,26 +88,26 @@ export default function MatchCard({
             <div className="flex flex-col items-end gap-1">
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                 isUpcoming 
-                  ? 'bg-green-100 text-green-800' 
-                  : 'bg-gray-100 text-gray-800'
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' 
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300'
               }`}>
                 {isUpcoming ? 'Upcoming' : 'Past'}
               </span>
               
               {/* Participation status badge */}
               {isOrganizer && (
-                <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
                   Your Match
                 </span>
               )}
               {userParticipationStatus === 'joined' && !isOrganizer && (
-                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
                   Joined
                 </span>
               )}
             </div>
             
-            <span className="text-lg font-bold text-green-600">
+            <span className="text-lg font-bold text-green-600 dark:text-green-500">
               {match.pitch_type}
             </span>
           </div>
@@ -115,17 +115,17 @@ export default function MatchCard({
 
         {/* Location */}
         <div className="flex items-start gap-2 mb-4">
-          <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-          <span className="text-sm text-gray-600 line-clamp-2">{match.location}</span>
+          <MapPin className="h-4 w-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
+          <span className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{match.location}</span>
         </div>
 
         {/* Match Details */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1">
-              <Users className="h-4 w-4 text-gray-400" />
+              <Users className="h-4 w-4 text-gray-400 dark:text-gray-500" />
               <span className={`text-sm font-medium ${
-                isFull ? 'text-red-600' : 'text-gray-600'
+                isFull ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'
               }`}>
                 {match.current_players}/{match.max_players}
                 {isFull && ' (Full)'}
@@ -134,33 +134,33 @@ export default function MatchCard({
             
             {match.pricing > 0 && (
               <div className="flex items-center gap-1">
-                <PoundSterling className="h-4 w-4 text-gray-400" />
-                <span className="text-sm text-gray-600">£{match.pricing}</span>
+                <PoundSterling className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                <span className="text-sm text-gray-600 dark:text-gray-400">£{match.pricing}</span>
               </div>
             )}
           </div>
 
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             by {match.organizer?.full_name || match.organizer?.email || 'Anonymous'}
           </div>
         </div>
 
         {/* Notes Preview */}
         {match.notes && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <p className="text-sm text-gray-600 line-clamp-2">{match.notes}</p>
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">{match.notes}</p>
           </div>
         )}
 
         {/* Action Indicator */}
-        <div className="mt-4 pt-4 border-t border-gray-100">
+        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
           <div className="flex justify-between items-center">
             <div className={`flex items-center gap-2 text-sm font-medium ${actionContent.color}`}>
               {actionContent.icon}
               <span>{actionContent.text}</span>
             </div>
             {!isUpcoming && (
-              <span className="text-xs text-gray-400">Match completed</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">Match completed</span>
             )}
           </div>
         </div>

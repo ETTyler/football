@@ -99,10 +99,20 @@ export default function NotificationsPage() {
     setActionLoading(invitationId)
     try {
       await updateInvitationStatus(invitationId, status)
-      // Refresh notifications to update the status
-      await fetchNotifications()
+      // Update the notification to reflect the new status
+      setNotifications(prev => 
+        prev.map(n => {
+          if (n.related_invitation_id === invitationId && n.related_invitation) {
+            return {
+              ...n,
+              related_invitation: { ...n.related_invitation, status }
+            }
+          }
+          return n
+        })
+      )
     } catch (error) {
-      console.error('Error updating invitation:', error)
+      console.error('Error updating invitation status:', error)
     } finally {
       setActionLoading(null)
     }
@@ -112,14 +122,10 @@ export default function NotificationsPage() {
     switch (type) {
       case 'match_invitation':
         return <Users className="h-5 w-5 text-blue-500" />
+      case 'match_update':
+        return <Edit className="h-5 w-5 text-green-500" />
       case 'new_match':
         return <Bell className="h-5 w-5 text-green-500" />
-      case 'match_update':
-        return <Edit className="h-5 w-5 text-orange-500" />
-      case 'invitation_accepted':
-        return <Check className="h-5 w-5 text-green-500" />
-      case 'invitation_declined':
-        return <X className="h-5 w-5 text-red-500" />
       default:
         return <Bell className="h-5 w-5 text-gray-500" />
     }
@@ -145,39 +151,17 @@ export default function NotificationsPage() {
             <button
               onClick={() => handleInvitationResponse(notification.related_invitation_id!, 'accepted')}
               disabled={actionLoading === notification.related_invitation_id}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-3 py-1 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white text-xs rounded transition-colors disabled:opacity-50"
             >
-              {actionLoading === notification.related_invitation_id ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              Accept
+              {actionLoading === notification.related_invitation_id ? 'Processing...' : 'Accept'}
             </button>
             <button
               onClick={() => handleInvitationResponse(notification.related_invitation_id!, 'declined')}
               disabled={actionLoading === notification.related_invitation_id}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-3 py-1 bg-gray-600 hover:bg-gray-700 dark:bg-gray-500 dark:hover:bg-gray-600 text-white text-xs rounded transition-colors disabled:opacity-50"
             >
-              {actionLoading === notification.related_invitation_id ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <X className="h-4 w-4" />
-              )}
-              Decline
+              {actionLoading === notification.related_invitation_id ? 'Processing...' : 'Decline'}
             </button>
-          </div>
-        )
-      } else {
-        return (
-          <div className="mt-3">
-            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-              invitation?.status === 'accepted' 
-                ? 'bg-green-100 text-green-800' 
-                : 'bg-red-100 text-red-800'
-            }`}>
-              {invitation?.status === 'accepted' ? 'Accepted' : 'Declined'}
-            </span>
           </div>
         )
       }
@@ -187,14 +171,12 @@ export default function NotificationsPage() {
 
   if (!user) {
     return (
-      <div className="max-w-2xl mx-auto mt-8">
-        <div className="bg-white rounded-lg shadow-sm p-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h1>
-          <p className="text-gray-600 mb-6">You need to be signed in to view notifications.</p>
-          <Link
-            href="/auth/signin"
-            className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-          >
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <Bell className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Authentication Required</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">Please sign in to view your notifications.</p>
+          <Link href="/auth/signin" className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white px-6 py-3 rounded-lg font-medium transition-colors">
             Sign In
           </Link>
         </div>
@@ -202,96 +184,99 @@ export default function NotificationsPage() {
     )
   }
 
-  const filteredNotifications = getFilteredNotifications()
-  const unreadCount = notifications.filter(n => !n.read).length
-
-  return (
-    <div className="max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Notifications</h1>
-        <p className="text-gray-600">Stay updated with your matches and invitations</p>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                filter === 'all'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              All ({notifications.length})
-            </button>
-            <button
-              onClick={() => setFilter('unread')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                filter === 'unread'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Unread ({unreadCount})
-            </button>
-            <button
-              onClick={() => setFilter('invitations')}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                filter === 'invitations'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Invitations ({notifications.filter(n => n.type === 'match_invitation').length})
-            </button>
-          </div>
-
-          {unreadCount > 0 && (
-            <button
-              onClick={handleMarkAllAsRead}
-              disabled={actionLoading === 'all'}
-              className="flex items-center gap-2 px-4 py-2 text-green-600 hover:text-green-700 font-medium transition-colors disabled:opacity-50"
-            >
-              {actionLoading === 'all' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCheck className="h-4 w-4" />
-              )}
-              Mark all as read
-            </button>
-          )}
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-green-600 dark:text-green-500 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Loading notifications...</p>
         </div>
       </div>
+    )
+  }
 
-      {/* Notifications List */}
-      <div className="bg-white rounded-lg shadow-sm">
-        {loading ? (
-          <div className="p-8 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-green-600 mx-auto mb-4" />
-            <p className="text-gray-600">Loading notifications...</p>
+  const filteredNotifications = getFilteredNotifications()
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Notifications</h1>
+          <p className="text-gray-600 dark:text-gray-400">Stay updated with your match activities</p>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2">
+              <button
+                onClick={() => setFilter('all')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === 'all'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                All ({notifications.length})
+              </button>
+              <button
+                onClick={() => setFilter('unread')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === 'unread'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Unread ({notifications.filter(n => !n.read).length})
+              </button>
+              <button
+                onClick={() => setFilter('invitations')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  filter === 'invitations'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                Invitations ({notifications.filter(n => n.type === 'match_invitation').length})
+              </button>
+            </div>
+
+            {notifications.some(n => !n.read) && (
+              <button
+                onClick={handleMarkAllAsRead}
+                disabled={actionLoading === 'all'}
+                className="flex items-center gap-2 text-sm text-green-600 dark:text-green-500 hover:text-green-700 dark:hover:text-green-400 disabled:opacity-50"
+              >
+                <CheckCheck className="h-4 w-4" />
+                Mark all read
+              </button>
+            )}
           </div>
-        ) : filteredNotifications.length === 0 ? (
-          <div className="p-8 text-center">
-            <Bell className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {filter === 'unread' ? 'No unread notifications' : 
-               filter === 'invitations' ? 'No invitations' : 'No notifications'}
-            </h3>
-            <p className="text-gray-600">
-              {filter === 'all' 
-                ? "You'll see notifications here when you receive match invitations or updates."
-                : `Switch to "All" to see your complete notification history.`}
-            </p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {filteredNotifications.map((notification) => (
+        </div>
+
+        {/* Notifications List */}
+        <div className="space-y-4">
+          {filteredNotifications.length === 0 ? (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
+              <Bell className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No notifications</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                {filter === 'all' 
+                  ? "You're all caught up! Check back later for new notifications."
+                  : filter === 'unread'
+                  ? "No unread notifications."
+                  : "No invitation notifications."
+                }
+              </p>
+            </div>
+          ) : (
+            filteredNotifications.map((notification) => (
               <div
                 key={notification.id}
-                className={`p-6 transition-colors ${!notification.read ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                className={`bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 ${
+                  !notification.read ? 'border-l-4 border-l-blue-500 dark:border-l-blue-400' : ''
+                }`}
               >
                 <div className="flex items-start gap-4">
                   <div className="flex-shrink-0 mt-1">
@@ -299,83 +284,62 @@ export default function NotificationsPage() {
                   </div>
                   
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-1">
+                        <h3 className="font-medium text-gray-900 dark:text-gray-100">
                           {notification.title}
                         </h3>
-                        <p className="text-gray-600 mb-2">
+                        <p className="text-gray-600 dark:text-gray-400 mt-1">
                           {notification.message}
                         </p>
-
-                        {notification.related_match && (
-                          <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                            <p className="font-medium text-gray-900">
-                              {notification.related_match.title}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {format(new Date(notification.related_match.date), 'EEEE, MMMM dd, yyyy')} at{' '}
-                              {notification.related_match.time}
-                            </p>
-                          </div>
-                        )}
                         
                         {renderNotificationActions(notification)}
                         
-                        <div className="flex items-center gap-2 mt-3">
-                          <Clock className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm text-gray-500">
-                            {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
-                          </span>
+                        <div className="flex items-center gap-4 mt-3">
+                          <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                            <Clock className="h-3 w-3" />
+                            <span>{formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}</span>
+                          </div>
+                          
+                          {notification.related_match && (
+                            <Link
+                              href={`/matches/${notification.related_match.id}`}
+                              className="text-xs text-green-600 dark:text-green-500 hover:text-green-700 dark:hover:text-green-400"
+                            >
+                              View Match
+                            </Link>
+                          )}
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 ml-4">
                         {!notification.read && (
                           <button
                             onClick={() => handleMarkAsRead(notification.id)}
                             disabled={actionLoading === notification.id}
-                            className="p-2 text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                            className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 transition-colors disabled:opacity-50"
                             title="Mark as read"
                           >
-                            {actionLoading === notification.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Check className="h-4 w-4" />
-                            )}
+                            <Check className="h-4 w-4" />
                           </button>
-                        )}
-                        
-                        {notification.related_match_id && (
-                          <Link
-                            href={`/matches/${notification.related_match_id}`}
-                            className="p-2 text-green-600 hover:text-green-700 transition-colors"
-                            title="View match"
-                          >
-                            <Users className="h-4 w-4" />
-                          </Link>
                         )}
                         
                         <button
                           onClick={() => handleDeleteNotification(notification.id)}
                           disabled={actionLoading === notification.id}
-                          className="p-2 text-red-400 hover:text-red-600 transition-colors disabled:opacity-50"
+                          className="p-1 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                           title="Delete notification"
                         >
-                          {actionLoading === notification.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

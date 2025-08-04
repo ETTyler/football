@@ -1,151 +1,118 @@
 'use client'
 
 import Link from 'next/link'
-import { useAuth } from '@/contexts/AuthContext'
-import { MapPin, Users, Calendar, Trophy, Plus, Search } from 'lucide-react'
+import { Target, Users, Calendar, MapPin } from 'lucide-react'
 
-export default function Home() {
-  const { user } = useAuth()
-
+export default function HomePage() {
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Hero Section */}
-      <div className="text-center py-16">
-        <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
-          Find Your Perfect
-          <span className="text-green-600 block">Football Match</span>
-        </h1>
-        <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-          Connect with local players, organize matches, and join games in your area. 
-          MatchHub makes it easy to play the beautiful game.
-        </p>
-        
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          {user ? (
-            <>
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-6">
+              <div className="bg-green-100 dark:bg-green-900/30 p-3 rounded-full">
+                <Target className="h-12 w-12 text-green-600 dark:text-green-500" />
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 sm:text-5xl md:text-6xl">
+              Find Your Perfect
+              <span className="text-green-600 dark:text-green-500"> Football Match</span>
+            </h1>
+            <p className="mt-6 text-xl text-gray-600 dark:text-gray-400 max-w-3xl mx-auto">
+              Connect with local football players, organize matches, and never miss a game. 
+              Join the community that makes football accessible to everyone.
+            </p>
+            <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
               <Link
                 href="/matches"
-                className="bg-green-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                className="bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white px-8 py-4 rounded-lg font-semibold text-lg transition-colors"
               >
-                <Search className="h-5 w-5" />
                 Browse Matches
               </Link>
-              <Link
-                href="/create-match"
-                className="border-2 border-green-600 text-green-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-green-50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="h-5 w-5" />
-                Create Match
-              </Link>
-            </>
-          ) : (
-            <>
               <Link
                 href="/auth/signup"
-                className="bg-green-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-green-700 transition-colors"
+                className="bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600 px-8 py-4 rounded-lg font-semibold text-lg transition-colors"
               >
-                Get Started Free
+                Get Started
               </Link>
-              <Link
-                href="/matches"
-                className="border-2 border-green-600 text-green-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-green-50 transition-colors"
-              >
-                Browse Matches
-              </Link>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Features Section */}
-      <div className="grid md:grid-cols-3 gap-8 py-16">
-        <div className="text-center p-6">
-          <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <MapPin className="h-8 w-8 text-green-600" />
-          </div>
-          <h3 className="text-xl font-semibold mb-3">Find Local Matches</h3>
-          <p className="text-gray-600">
-            Discover football matches happening near you with our interactive map and location-based search.
+      <div className="max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-4">
+            Why Choose MatchHub?
+          </h2>
+          <p className="text-xl text-gray-600 dark:text-gray-400">
+            Everything you need to organize and join football matches
           </p>
         </div>
 
-        <div className="text-center p-6">
-          <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Users className="h-8 w-8 text-blue-600" />
-          </div>
-          <h3 className="text-xl font-semibold mb-3">Connect with Players</h3>
-          <p className="text-gray-600">
-            Join matches, meet new players, and build your local football community.
-          </p>
-        </div>
-
-        <div className="text-center p-6">
-          <div className="bg-purple-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Calendar className="h-8 w-8 text-purple-600" />
-          </div>
-          <h3 className="text-xl font-semibold mb-3">Easy Organization</h3>
-          <p className="text-gray-600">
-            Create and manage matches with our simple tools. Set dates, locations, and player limits.
-          </p>
-        </div>
-      </div>
-
-      {/* How it Works */}
-      <div className="bg-white rounded-2xl p-8 shadow-sm">
-        <h2 className="text-3xl font-bold text-center mb-12">How MatchHub Works</h2>
         <div className="grid md:grid-cols-3 gap-8">
           <div className="text-center">
-            <div className="bg-green-600 text-white w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-4 text-lg font-bold">
-              1
+            <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <Calendar className="h-8 w-8 text-green-600 dark:text-green-500" />
             </div>
-            <h3 className="font-semibold mb-2">Create or Browse</h3>
-            <p className="text-gray-600 text-sm">
-              Create a new match or browse existing ones in your area
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Easy Match Creation
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Create matches in minutes with our simple form. Set location, time, and player limits with ease.
             </p>
           </div>
 
           <div className="text-center">
-            <div className="bg-green-600 text-white w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-4 text-lg font-bold">
-              2
+            <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <Users className="h-8 w-8 text-green-600 dark:text-green-500" />
             </div>
-            <h3 className="font-semibold mb-2">Join & Connect</h3>
-            <p className="text-gray-600 text-sm">
-              Join matches that fit your schedule and skill level
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Connect with Players
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Find local players and build your football community. Join matches or invite others to yours.
             </p>
           </div>
 
           <div className="text-center">
-            <div className="bg-green-600 text-white w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-4 text-lg font-bold">
-              3
+            <div className="bg-green-100 dark:bg-green-900/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <MapPin className="h-8 w-8 text-green-600 dark:text-green-500" />
             </div>
-            <h3 className="font-semibold mb-2">Play & Enjoy</h3>
-            <p className="text-gray-600 text-sm">
-              Show up, play, and enjoy the beautiful game with your community
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Local Matches
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400">
+              Discover matches near you with our location-based search. Never travel far for a game again.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Stats Section */}
-      <div className="text-center py-16">
-        <h2 className="text-2xl font-bold mb-8">Join the Community</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-          <div>
-            <div className="text-3xl font-bold text-green-600">500+</div>
-            <div className="text-gray-600">Matches Created</div>
-          </div>
-          <div>
-            <div className="text-3xl font-bold text-green-600">1,200+</div>
-            <div className="text-gray-600">Active Players</div>
-          </div>
-          <div>
-            <div className="text-3xl font-bold text-green-600">50+</div>
-            <div className="text-gray-600">Locations</div>
-          </div>
-          <div>
-            <div className="text-3xl font-bold text-green-600">5⭐</div>
-            <div className="text-gray-600">User Rating</div>
+      {/* CTA Section */}
+      <div className="bg-green-600 dark:bg-green-700">
+        <div className="max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-bold text-white mb-4">
+            Ready to Play?
+          </h2>
+          <p className="text-xl text-green-100 mb-8 max-w-2xl mx-auto">
+            Join thousands of football players who have already found their perfect matches on MatchHub.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/auth/signup"
+              className="bg-white text-green-600 hover:bg-gray-100 px-8 py-4 rounded-lg font-semibold text-lg transition-colors"
+            >
+              Create Account
+            </Link>
+            <Link
+              href="/matches"
+              className="border-2 border-white text-white hover:bg-white hover:text-green-600 px-8 py-4 rounded-lg font-semibold text-lg transition-colors"
+            >
+              Browse Matches
+            </Link>
           </div>
         </div>
       </div>

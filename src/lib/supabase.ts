@@ -5,36 +5,21 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Helper function to ensure current user has a profile with proper name
-export async function ensureUserProfile(user: any): Promise<void> {
-  if (!user) return
+// Constants
+export const DAY_NAMES = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
+]
 
-  const fullName = user.user_metadata?.full_name || user.user_metadata?.fullName
-
-  if (fullName) {
-    try {
-      // Simply insert, let the database trigger handle conflicts
-      await supabase
-        .from('user_profiles')
-        .insert({
-          id: user.id,
-          full_name: fullName
-        })
-    } catch (error) {
-      // Profile might already exist, that's fine
-      console.log('Profile may already exist:', error)
-    }
-  }
-}
-
-// Types for our database
+// Match interface
 export interface Match {
   id: string
   created_at: string
+  updated_at: string
   title: string
+  organizer_id: string
   date: string
   time: string
-  pitch_type: '5-a-side' | '7-a-side' | '11-a-side'
+  pitch_type: '5-a-side' | '6-a-side' | '7-a-side' | '11-a-side'
   location: string
   latitude: number
   longitude: number
@@ -42,34 +27,35 @@ export interface Match {
   max_players: number
   current_players: number
   notes?: string
-  organizer_id: string
-  organizer: {
+  organizer?: {
     id: string
-    email: string
-    full_name?: string
+    full_name: string
+    email?: string
   }
 }
 
+// Match participant interface
 export interface MatchParticipant {
   id: string
+  created_at: string
   match_id: string
   user_id: string
   joined_at: string
-  user: {
+  user?: {
     id: string
-    email: string
-    full_name?: string
+    full_name: string
+    email?: string
   }
 }
 
+// User profile interface
 export interface UserProfile {
   id: string
-  email: string
-  full_name?: string
-  created_at: string
+  full_name: string
+  email?: string
 }
 
-// New interfaces for invitations and notifications
+// Invitation interface
 export interface Invitation {
   id: string
   created_at: string
@@ -85,6 +71,7 @@ export interface Invitation {
   invitee?: UserProfile
 }
 
+// Notification interface
 export interface Notification {
   id: string
   created_at: string
@@ -101,94 +88,13 @@ export interface Notification {
   related_invitation?: Invitation
 }
 
-// Helper functions for notifications
-export async function getUnreadNotificationCount(userId: string): Promise<number> {
-  const { data, error } = await supabase
-    .rpc('get_unread_notification_count', { p_user_id: userId })
-  
-  if (error) {
-    console.error('Error getting unread count:', error)
-    return 0
-  }
-  
-  return data || 0
-}
-
-export async function markNotificationAsRead(notificationId: string): Promise<void> {
-  const { error } = await supabase
-    .from('notifications')
-    .update({ read: true })
-    .eq('id', notificationId)
-  
-  if (error) {
-    console.error('Error marking notification as read:', error)
-    throw error
-  }
-}
-
-export async function markAllNotificationsAsRead(userId: string): Promise<void> {
-  const { error } = await supabase
-    .from('notifications')
-    .update({ read: true })
-    .eq('user_id', userId)
-    .eq('read', false)
-  
-  if (error) {
-    console.error('Error marking all notifications as read:', error)
-    throw error
-  }
-}
-
-// Helper functions for invitations
-export async function createInvitation(
-  matchId: string, 
-  inviteeId: string, 
-  message?: string
-): Promise<Invitation> {
-  const { data, error } = await supabase
-    .from('invitations')
-    .insert([{
-      match_id: matchId,
-      invitee_id: inviteeId,
-      inviter_id: (await supabase.auth.getUser()).data.user?.id,
-      message
-    }])
-    .select()
-    .single()
-  
-  if (error) throw error
-  return data
-}
-
-export async function updateInvitationStatus(
-  invitationId: string, 
-  status: 'accepted' | 'declined'
-): Promise<void> {
-  const { error } = await supabase
-    .from('invitations')
-    .update({ status })
-    .eq('id', invitationId)
-  
-  if (error) throw error
-}
-
-// Simple user interface for search results
+// User search result interface
 export interface UserSearchResult {
   id: string
   full_name: string
 }
 
-// User availability interface
-export interface UserAvailability {
-  id: string
-  created_at: string
-  updated_at: string
-  user_id: string
-  day_of_week: number // 0=Sunday, 1=Monday, etc.
-  available: boolean
-}
-
-// Day availability for UI
+// User availability interfaces
 export interface DayAvailability {
   day_of_week: number
   available: boolean
@@ -248,46 +154,136 @@ export async function searchUsers(query: string, excludeIds: string[] = []): Pro
   }
 }
 
-// ====== AVAILABILITY FUNCTIONS ======
+// Helper functions for invitations
+export async function createInvitation(
+  matchId: string, 
+  inviteeId: string, 
+  message?: string
+): Promise<Invitation> {
+  try {
+    console.log('Creating invitation:', { matchId, inviteeId, message })
+    
+    // Get current user
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    if (userError) throw userError
+    if (!userData.user) throw new Error('User not authenticated')
 
-// Get day names for UI
-export const DAY_NAMES = [
-  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
-]
+    const { data, error } = await supabase
+      .from('invitations')
+      .insert([{
+        match_id: matchId,
+        invitee_id: inviteeId,
+        inviter_id: userData.user.id,
+        message: message || 'You have been invited to join this football match!'
+      }])
+      .select()
+      .single()
+    
+    if (error) {
+      console.error('Error creating invitation:', error)
+      throw error
+    }
+    
+    console.log('Successfully created invitation:', data)
+    return data
+  } catch (error) {
+    console.error('Failed to create invitation:', error)
+    throw error
+  }
+}
 
-// Get user's availability for all days of the week
+export async function updateInvitationStatus(
+  invitationId: string, 
+  status: 'accepted' | 'declined'
+): Promise<void> {
+  const { error } = await supabase
+    .from('invitations')
+    .update({ status })
+    .eq('id', invitationId)
+  
+  if (error) throw error
+}
+
+// Helper functions for notifications
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .rpc('get_unread_notification_count', { p_user_id: userId })
+  
+  if (error) {
+    console.error('Error getting unread count:', error)
+    return 0
+  }
+  
+  return data || 0
+}
+
+export async function markNotificationAsRead(notificationId: string): Promise<void> {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('id', notificationId)
+
+  if (error) {
+    console.error('Error marking notification as read:', error)
+    throw error
+  }
+}
+
+export async function markAllNotificationsAsRead(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('user_id', userId)
+    .eq('read', false)
+  
+  if (error) {
+    console.error('Error marking all notifications as read:', error)
+    throw error
+  }
+}
+
+// User availability functions (for settings page)
 export async function getUserAvailability(userId: string): Promise<DayAvailability[]> {
   try {
-    const { data, error } = await supabase.rpc('get_user_availability', {
-      p_user_id: userId
-    })
+    const { data, error } = await supabase
+      .from('user_availability')
+      .select('day_of_week, available')
+      .eq('user_id', userId)
+      .order('day_of_week')
 
     if (error) throw error
 
-    return (data || []).map((item: any) => ({
-      day_of_week: item.day_of_week,
-      available: item.available,
-      day_name: DAY_NAMES[item.day_of_week]
-    }))
+    // Create array for all 7 days
+    return DAY_NAMES.map((dayName, index) => {
+      const existingAvailability = data?.find(d => d.day_of_week === index)
+      return {
+        day_of_week: index,
+        available: existingAvailability?.available ?? true, // Default to available
+        day_name: dayName
+      }
+    })
   } catch (error) {
-    console.error('Error fetching user availability:', error)
+    console.error('Error getting user availability:', error)
     // Return default availability (all days available)
-    return DAY_NAMES.map((name, index) => ({
+    return DAY_NAMES.map((dayName, index) => ({
       day_of_week: index,
       available: true,
-      day_name: name
+      day_name: dayName
     }))
   }
 }
 
-// Set user availability for a specific day
 export async function setUserAvailability(userId: string, dayOfWeek: number, available: boolean): Promise<void> {
   try {
-    const { error } = await supabase.rpc('set_user_availability', {
-      p_user_id: userId,
-      p_day_of_week: dayOfWeek,
-      p_available: available
-    })
+    const { error } = await supabase
+      .from('user_availability')
+      .upsert({
+        user_id: userId,
+        day_of_week: dayOfWeek,
+        available: available
+      }, {
+        onConflict: 'user_id,day_of_week'
+      })
 
     if (error) throw error
   } catch (error) {
@@ -296,104 +292,186 @@ export async function setUserAvailability(userId: string, dayOfWeek: number, ava
   }
 }
 
-// Get users available for a specific date
-export async function getAvailableUsersForDate(matchDate: string): Promise<UserSearchResult[]> {
+// Additional availability functions (for debug page)
+export async function getAvailableUsersForDate(date: string): Promise<UserSearchResult[]> {
   try {
-    const { data, error } = await supabase.rpc('get_available_users_for_date', {
-      p_date: matchDate
+    console.log('Getting available users for date:', date)
+    
+    // Convert date to day of week (0=Sunday, 1=Monday, etc.)
+    const dateObj = new Date(date)
+    const dayOfWeek = dateObj.getDay()
+    
+    console.log('Converted to day of week:', dayOfWeek)
+    
+    // First try to use the RPC function if it exists
+    try {
+      const { data: rpcData, error: rpcError } = await supabase
+        .rpc('get_available_users_for_date', { 
+          p_date: date 
+        })
+
+      if (!rpcError && rpcData) {
+        console.log('RPC function worked, data:', rpcData)
+        return rpcData.map((user: any) => ({
+          id: user.user_id,
+          full_name: user.full_name
+        }))
+      }
+      
+      console.log('RPC function failed or returned no data, using fallback approach')
+    } catch (rpcError) {
+      console.log('RPC function not available, using fallback approach')
+    }
+    
+    // Fallback approach: query the tables separately
+    console.log('Fetching all users...')
+    
+    // Get all users first
+    const { data: users, error: usersError } = await supabase
+      .from('user_profiles')
+      .select('id, full_name')
+    
+    if (usersError) {
+      console.error('Error fetching users:', usersError)
+      throw usersError
+    }
+    
+    console.log('Found users:', users?.length || 0)
+    
+    if (!users || users.length === 0) {
+      console.log('No users found')
+      return []
+    }
+    
+    // Get availability data for this day of week
+    console.log('Fetching availability for day of week:', dayOfWeek)
+    
+    const { data: availabilityData, error: availabilityError } = await supabase
+      .from('user_availability')
+      .select('user_id, available')
+      .eq('day_of_week', dayOfWeek)
+    
+    if (availabilityError) {
+      console.warn('Error fetching availability data:', availabilityError)
+      console.log('Defaulting all users to available')
+      // If availability table doesn't exist or has issues, default all users to available
+      return users.map(user => ({
+        id: user.id,
+        full_name: user.full_name
+      }))
+    }
+    
+    console.log('Found availability records:', availabilityData?.length || 0)
+    
+    // Create a map of user availability
+    const availabilityMap = new Map()
+    if (availabilityData) {
+      availabilityData.forEach(record => {
+        availabilityMap.set(record.user_id, record.available)
+      })
+    }
+    
+    // Filter users who are available on this day
+    const availableUsers = users.filter(user => {
+      // If no availability record exists, default to available (true)
+      // If availability record exists, use the available value
+      const isAvailable = availabilityMap.get(user.id) !== false
+      
+      console.log(`User ${user.full_name}: availability =`, availabilityMap.get(user.id), 'isAvailable =', isAvailable)
+      
+      return isAvailable
     })
-
-    if (error) throw error
-
-    return data || []
+    
+    const result = availableUsers.map(user => ({
+      id: user.id,
+      full_name: user.full_name
+    }))
+    
+    console.log('Available users result:', result.length, 'out of', users.length, 'total users')
+    return result
+    
   } catch (error) {
-    console.error('Error fetching available users for date:', error)
-    return []
+    console.error('Error getting available users for date:', error)
+    
+    // Final fallback: return all users if everything else fails
+    try {
+      console.log('Using final fallback: returning all users')
+      const { data: allUsers, error: fallbackError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .limit(20)
+      
+      if (fallbackError) throw fallbackError
+      
+      return (allUsers || []).map(user => ({
+        id: user.id,
+        full_name: user.full_name
+      }))
+    } catch (fallbackError) {
+      console.error('Final fallback also failed:', fallbackError)
+      return []
+    }
   }
 }
 
-// Search users with availability priority for a specific date
-export async function searchUsersWithAvailability(
-  query: string, 
-  matchDate?: string, 
-  excludeIds: string[] = []
-): Promise<{ available: UserSearchResult[], unavailable: UserSearchResult[], others: UserSearchResult[] }> {
+export async function searchUsersWithAvailability(query: string, date: string, excludeIds: string[] = []): Promise<{
+  availableUsers: UserSearchResult[]
+  unavailableUsers: UserSearchResult[]
+  otherUsers: UserSearchResult[]
+}> {
   try {
-    console.log('searchUsersWithAvailability called with:', { query, matchDate, excludeIds })
+    console.log('searchUsersWithAvailability called with:', { query, date, excludeIds })
     
-    // Get all users matching the search query
-    const allUsers = await searchUsers(query, excludeIds)
-    console.log('All users from search:', allUsers)
+    // Get all users matching the search query first
+    const searchResults = await searchUsers(query, excludeIds)
+    console.log('Search results:', searchResults)
     
-    if (!matchDate) {
-      console.log('No match date provided, returning all as others')
-      return { available: [], unavailable: [], others: allUsers }
-    }
-
-    // Get the day of week for the match date
-    const matchDateObj = new Date(matchDate)
-    const dayOfWeek = matchDateObj.getDay() // 0=Sunday, 1=Monday, etc.
-    console.log('Match date:', matchDate, 'Day of week:', dayOfWeek)
-
-    // Get detailed availability for all users
-    const userAvailabilityPromises = allUsers.map(async (user) => {
-      try {
-        const { data, error } = await supabase.rpc('get_user_availability', {
-          p_user_id: user.id
-        })
-        
-        if (error) {
-          console.error(`Error getting availability for user ${user.id}:`, error)
-          return { user, status: 'unknown' }
-        }
-
-        // Find the availability for the specific day
-        const dayAvailability = data?.find((d: any) => d.day_of_week === dayOfWeek)
-        
-        if (dayAvailability === undefined) {
-          // No availability data, assume available (default behavior)
-          console.log(`User ${user.full_name} has no availability data for day ${dayOfWeek}, assuming available`)
-          return { user, status: 'available' }
-        }
-        
-        const status = dayAvailability.available ? 'available' : 'unavailable'
-        console.log(`User ${user.full_name} is ${status} on day ${dayOfWeek}`)
-        return { user, status }
-        
-      } catch (err) {
-        console.error(`Exception getting availability for user ${user.id}:`, err)
-        return { user, status: 'unknown' }
+    if (searchResults.length === 0) {
+      return {
+        availableUsers: [],
+        unavailableUsers: [],
+        otherUsers: []
       }
+    }
+    
+    // Get users available for the specific date
+    const availableForDate = await getAvailableUsersForDate(date)
+    console.log('Available users for date:', availableForDate)
+    
+    const availableUserIds = new Set(availableForDate.map(u => u.id))
+    
+    // Categorize search results by availability
+    const availableUsers = searchResults.filter(user => availableUserIds.has(user.id))
+    const unavailableUsers = searchResults.filter(user => !availableUserIds.has(user.id))
+    
+    console.log('Categorized results:', {
+      available: availableUsers.length,
+      unavailable: unavailableUsers.length
     })
-
-    const userAvailabilityResults = await Promise.all(userAvailabilityPromises)
-    console.log('User availability results:', userAvailabilityResults)
-
-    // Categorize users based on their availability status
-    const available = userAvailabilityResults
-      .filter(result => result.status === 'available')
-      .map(result => result.user)
     
-    const unavailable = userAvailabilityResults
-      .filter(result => result.status === 'unavailable')
-      .map(result => result.user)
-    
-    const others = userAvailabilityResults
-      .filter(result => result.status === 'unknown')
-      .map(result => result.user)
-
-    console.log('Final categorization:', { 
-      available: available.length, 
-      unavailable: unavailable.length, 
-      others: others.length 
-    })
-
-    return { available, unavailable, others }
-    
+    return {
+      availableUsers,
+      unavailableUsers,
+      otherUsers: [] // All users are categorized as available or unavailable
+    }
   } catch (error) {
     console.error('Error in searchUsersWithAvailability:', error)
-    // Fallback: treat all users as others
-    const allUsers = await searchUsers(query, excludeIds)
-    return { available: [], unavailable: [], others: allUsers }
+    
+    // Fallback to simple search if availability check fails
+    try {
+      const searchResults = await searchUsers(query, excludeIds)
+      return {
+        availableUsers: [],
+        unavailableUsers: [],
+        otherUsers: searchResults
+      }
+    } catch (fallbackError) {
+      console.error('Fallback search also failed:', fallbackError)
+      return {
+        availableUsers: [],
+        unavailableUsers: [],
+        otherUsers: []
+      }
+    }
   }
 } 

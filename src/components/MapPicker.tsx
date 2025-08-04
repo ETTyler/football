@@ -1,10 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'
-import { LatLngExpression } from 'leaflet'
-import { Search, MapPin, Loader2 } from 'lucide-react'
-import 'leaflet/dist/leaflet.css'
+import dynamic from 'next/dynamic'
+import { Search, MapPin, Loader2, Navigation } from 'lucide-react'
 
 interface MapPickerProps {
   onLocationSelect: (lat: number, lng: number, address: string) => void
@@ -23,70 +21,34 @@ interface SearchResult {
   lon: string
 }
 
-function LocationMarker({ 
-  onLocationSelect, 
-  markerPosition 
-}: { 
-  onLocationSelect: (lat: number, lng: number, address: string) => void
-  markerPosition: LatLngExpression | null
-}) {
-  const map = useMapEvents({
-    click(e) {
-      const { lat, lng } = e.latlng
-      
-      // Reverse geocoding using Nominatim (OpenStreetMap)
-      fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
-        .then(response => response.json())
-        .then(data => {
-          const address = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`
-          onLocationSelect(lat, lng, address)
-        })
-        .catch(() => {
-          onLocationSelect(lat, lng, `${lat.toFixed(6)}, ${lng.toFixed(6)}`)
-        })
-    },
-  })
-
-  return markerPosition ? <Marker position={markerPosition} /> : null
-}
+// Dynamically import the map component to avoid SSR issues
+const DynamicMap = dynamic(() => import('./DynamicMapComponent'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-64 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center border border-gray-300 dark:border-gray-600">
+      <div className="text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-400 dark:text-gray-500 mx-auto mb-2" />
+        <p className="text-gray-500 dark:text-gray-400">Loading map...</p>
+      </div>
+    </div>
+  )
+})
 
 export default function MapPicker({ 
   onLocationSelect, 
   initialPosition = [51.505, -0.09],
   initialLocation 
 }: MapPickerProps) {
-  const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
-  const [markerPosition, setMarkerPosition] = useState<LatLngExpression | null>(null)
-  const [mapCenter, setMapCenter] = useState<[number, number]>(initialPosition)
+  const [selectedLocation, setSelectedLocation] = useState<{lat: number, lng: number, address: string} | null>(null)
 
   useEffect(() => {
-    setMounted(true)
-    
-    // Fix for default markers in react-leaflet - only run on client side
-    const fixLeafletIcons = async () => {
-      if (typeof window !== 'undefined') {
-        const L = await import('leaflet')
-        delete ((L.default as any).Icon.Default.prototype as any)._getIconUrl
-        L.default.Icon.Default.mergeOptions({
-          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-        })
-      }
-    }
-    
-    fixLeafletIcons()
-    
     // Set initial location if provided (for editing)
     if (initialLocation) {
-      const position: LatLngExpression = [initialLocation.lat, initialLocation.lng]
-      setMarkerPosition(position)
-      setMapCenter([initialLocation.lat, initialLocation.lng])
-      // Optionally set the search query to show the current address
+      setSelectedLocation(initialLocation)
       setSearchQuery(initialLocation.address)
     }
   }, [initialLocation])
@@ -120,8 +82,10 @@ export default function MapPicker({
   }, [searchQuery])
 
   const handleLocationSelect = (lat: number, lng: number, address: string) => {
-    setMarkerPosition([lat, lng])
-    setMapCenter([lat, lng])
+    const locationData = { lat, lng, address }
+    setSelectedLocation(locationData)
+    setSearchQuery(address)
+    setShowResults(false)
     onLocationSelect(lat, lng, address)
   }
 
@@ -129,16 +93,26 @@ export default function MapPicker({
     const lat = parseFloat(result.lat)
     const lng = parseFloat(result.lon)
     handleLocationSelect(lat, lng, result.display_name)
-    setSearchQuery(result.display_name)
-    setShowResults(false)
   }
 
   const handleUseCurrentLocation = () => {
+    if (typeof window === 'undefined') return
+    
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords
-          handleLocationSelect(latitude, longitude, `Current location: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+          
+          // Reverse geocoding to get address
+          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`)
+            .then(response => response.json())
+            .then(data => {
+              const address = data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+              handleLocationSelect(latitude, longitude, address)
+            })
+            .catch(() => {
+              handleLocationSelect(latitude, longitude, `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
+            })
         },
         (error) => {
           console.error('Geolocation error:', error)
@@ -150,12 +124,10 @@ export default function MapPicker({
     }
   }
 
-  if (!mounted) {
-    return (
-      <div className="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center">
-        <p className="text-gray-500">Loading map...</p>
-      </div>
-    )
+  const clearSearch = () => {
+    setSearchQuery('')
+    setSearchResults([])
+    setShowResults(false)
   }
 
   return (
@@ -163,31 +135,31 @@ export default function MapPicker({
       {/* Address Search */}
       <div className="relative">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
           <input
             type="text"
             placeholder="Search for an address or place..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-full pl-10 pr-10 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
           />
           {isSearching && (
-            <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
+            <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500 animate-spin" />
           )}
         </div>
 
         {/* Search Results Dropdown */}
         {showResults && searchResults.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
             {searchResults.map((result) => (
               <button
                 key={result.place_id}
                 onClick={() => handleSearchResultClick(result)}
-                className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 focus:outline-none focus:bg-gray-50"
+                className="w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 focus:outline-none focus:bg-gray-50 dark:focus:bg-gray-700 transition-colors"
               >
                 <div className="flex items-start gap-2">
-                  <MapPin className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <span className="text-sm text-gray-700 line-clamp-2">{result.display_name}</span>
+                  <MapPin className="h-4 w-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" />
+                  <span className="text-sm text-gray-700 dark:text-gray-300 line-clamp-2">{result.display_name}</span>
                 </div>
               </button>
             ))}
@@ -196,44 +168,52 @@ export default function MapPicker({
       </div>
 
       {/* Quick Actions */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleUseCurrentLocation}
-          className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg transition-colors"
         >
-          <MapPin className="h-4 w-4" />
+          <Navigation className="h-4 w-4" />
           Use Current Location
         </button>
-        <p className="text-sm text-gray-600 flex items-center">
-          Or click on the map to select a location
-        </p>
+        {searchQuery && (
+          <button
+            onClick={clearSearch}
+            className="flex items-center justify-center gap-2 px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            Clear Search
+          </button>
+        )}
       </div>
 
+      {/* Selected Location Display */}
+      {selectedLocation && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+          <div className="flex items-start gap-2">
+            <MapPin className="h-4 w-4 text-green-600 dark:text-green-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-green-800 dark:text-green-300">Selected Location:</p>
+              <p className="text-sm text-green-700 dark:text-green-400">{selectedLocation.address}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map */}
-      <div className="w-full h-64 rounded-lg overflow-hidden border border-gray-300">
-        <MapContainer
-          key={`${mapCenter[0]}-${mapCenter[1]}`} // Force re-render when center changes
-          center={mapCenter}
-          zoom={13}
-          style={{ height: '100%', width: '100%' }}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <LocationMarker 
-            onLocationSelect={handleLocationSelect} 
-            markerPosition={markerPosition}
-          />
-        </MapContainer>
+      <div className="w-full h-64 rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
+        <DynamicMap
+          center={selectedLocation ? [selectedLocation.lat, selectedLocation.lng] : initialPosition}
+          markerPosition={selectedLocation ? [selectedLocation.lat, selectedLocation.lng] : null}
+          onLocationSelect={handleLocationSelect}
+        />
       </div>
 
       {/* Instructions */}
-      <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
-        <p className="font-medium text-blue-800 mb-1">How to select location:</p>
-        <ul className="list-disc list-inside space-y-1 text-blue-700">
+      <div className="text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-3 rounded-lg">
+        <p className="font-medium text-blue-800 dark:text-blue-300 mb-1">How to select location:</p>
+        <ul className="list-disc list-inside space-y-1 text-blue-700 dark:text-blue-400">
           <li>Type an address in the search box above</li>
-          <li>Click &quot;Use Current Location&quot; to use GPS</li>
+          <li>Click &ldquo;Use Current Location&rdquo; to use GPS</li>
           <li>Click anywhere on the map to pin a location</li>
         </ul>
       </div>
